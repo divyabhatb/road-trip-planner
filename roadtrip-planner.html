@@ -1,0 +1,173 @@
+<!-- 
+  Road Trip Planner Project
+  Developed by: Divya B
+  College Assignment - Kasaragod to Kashmir
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Road Trip Planner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#f4f7f9; }
+    h2 { text-align:center; margin:20px; color:#2c3e50; }
+    #form-container {
+      text-align:center; margin:20px auto; padding:15px; background:#fff;
+      border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); width:80%;
+    }
+    form label { margin:0 10px; font-weight:bold; }
+    form input, form select, form button { margin:5px; padding:5px; }
+    #map {
+      width:90%; height:60vh; margin:20px auto;
+      border:2px solid #ccc; border-radius:6px; display:none;
+    }
+    #route-info, #result-section {
+      text-align:center; margin:15px auto; width:85%; padding:15px;
+      background:#fff; border-radius:6px; box-shadow:0 2px 6px rgba(0,0,0,0.1);
+      display:none;
+    }
+    .green{color:green;font-weight:bold;} .red{color:red;font-weight:bold;}
+  </style>
+</head>
+<body>
+  <h2>Kasaragod to Kashmir Road Trip Planner</h2>
+
+  <div id="form-container">
+    <form id="trip-form">
+      <label for="start">Start:</label>
+      <input type="text" id="start" value="Kasaragod" required>
+      <label for="end">Destination:</label>
+      <input type="text" id="end" value="Kashmir" required><br>
+      <label for="people">People:</label>
+      <input type="number" id="people" min="1" max="100" value="2" required>
+      <label for="days">Days:</label>
+      <input type="number" id="days" min="1" value="5" required>
+      <label for="food">Food:</label>
+      <select id="food">
+        <option value="veg">Vegetarian</option>
+        <option value="nonveg">Non-Vegetarian</option>
+      </select>
+      <br><br>
+      <button type="submit">Plan Trip</button>
+    </form>
+  </div>
+
+  <div id="map"></div>
+  <div id="route-info"></div>
+  <div id="result-section"></div>
+<footer style="text-align:center; margin:20px; font-size:0.9em; color:#555;">
+  Project developed by Divya B
+</footer>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+  <script>
+    var map = L.map('map').setView([20.5937, 78.9629], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    var control;
+
+    // Geocoding: get coordinates from city/place name
+    async function geocode(place) {
+      let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(place)}`;
+      let response = await fetch(url);
+      let data = await response.json();
+      if (data.length > 0) {
+        return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+      }
+      return null;
+    }
+
+    function showRoute(startCoords, endCoords, peopleInput, daysInput, foodPref, startName, endName) {
+      if (control) map.removeControl(control);
+
+      control = L.Routing.control({
+        waypoints: [L.latLng(startCoords[0], startCoords[1]), L.latLng(endCoords[0], endCoords[1])],
+        routeWhileDragging: false,
+        draggableWaypoints: false,
+        addWaypoints: false,
+        createMarker: function() { return null; } // hide default markers if needed
+      }).addTo(map);
+
+      // Hide the long directions panel
+      control.on('routeselected', function() {
+        var container = document.querySelector('.leaflet-routing-container');
+        if (container) container.style.display = 'none';
+      });
+
+      control.on('routesfound', function(e) {
+        var route = e.routes[0];
+        var distance = (route.summary.totalDistance / 1000).toFixed(1);
+        var time = route.summary.totalTime;
+        var hours = Math.floor(time / 3600);
+        var minutes = Math.round((time % 3600) / 60);
+        var totalHours = route.summary.totalTime / 3600;
+        var drivingHoursPerDay = 8;
+        var recommendedDays = Math.ceil(totalHours / drivingHoursPerDay);
+
+        var realisticMsg = (daysInput >= recommendedDays)
+          ? `<span class="green">This trip is realistic for your days.</span>`
+          : `<span class="red">NOT realistic. Recommended: ${recommendedDays} days (8h/day).</span>`;
+
+        var foodMsg = (foodPref === "veg")
+          ? "Veg options: South Indian thalis, Gujarati thalis, North Indian vegetarian meals."
+          : "Non-Veg options: Seafood in Goa, Kebabs in Delhi, Butter Chicken in Punjab.";
+
+        // Group-specific accommodation advice
+        var stayAdvice =
+          peopleInput <= 3 ? 'Budget hotels or homestays.' :
+          peopleInput <= 10 ? 'Book multiple hotel rooms in advance.' :
+          peopleInput <= 30 ? 'Consider guest houses or serviced apartments.' :
+          'Large group: Arrange buses and book resorts/dormitory stays well in advance.';
+
+        var accommodationMsg =
+          `<br><b>People:</b> ${peopleInput}` +
+          `<br><b>Stay:</b> ${stayAdvice}` +
+          `<br><b>Food Tips:</b> ${foodMsg}`;
+
+        // Show results
+        document.getElementById('map').style.display = 'block';
+        document.getElementById('route-info').style.display = 'block';
+        document.getElementById('result-section').style.display = 'block';
+
+        // Fix map stuck in corner
+        setTimeout(() => { map.invalidateSize(); }, 200);
+
+        document.getElementById('route-info').innerHTML =
+          `<b>Distance:</b> ${distance} km | <b>Time:</b> ${hours} hrs ${minutes} mins<br>` +
+          realisticMsg + accommodationMsg;
+
+        document.getElementById('result-section').innerHTML =
+          `<b>Route:</b> ${startName} → ${endName}` +
+          `<br><b>Total Distance:</b> ${distance} km` +
+          `<br><b>Estimated Time:</b> ${hours} hrs ${minutes} mins` +
+          `<br><b>Recommended Days:</b> ${recommendedDays}`;
+      });
+    }
+
+    // Handle form submit
+    document.getElementById('trip-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var start = document.getElementById('start').value.trim();
+      var end = document.getElementById('end').value.trim();
+      var people = parseInt(document.getElementById('people').value, 10);
+      var days = parseInt(document.getElementById('days').value, 10);
+      var foodPref = document.getElementById('food').value;
+
+      let startCoords = await geocode(start);
+      let endCoords = await geocode(end);
+
+      if (startCoords && endCoords) {
+        showRoute(startCoords, endCoords, people, days, foodPref, start, end);
+      } else {
+        alert("Could not find coordinates for one of the places.");
+      }
+    });
+  </script>
+</body>
+</html>
